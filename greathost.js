@@ -280,55 +280,71 @@ async function sendTelegramMessage(message) {
     
     console.log(`📊 判定数据: 之前 ${beforeHours}h -> 之后 ${afterHours}h`);
 
-    // === 13. 智能逻辑判定 (重点修改) ===
+// === 13. 智能逻辑判定 (优化整合版) ===
     
-    // 情况 A：时间明确增加了 -> 成功
-    const isRenewSuccess = afterHours > beforeHours;
+    // 基础变量初始化
+    let statusIcon = '🚨';
+    let statusTitle = '续期失败';
+    let tip = `尝试续期后时间未增加 (仍为 ${afterHours}h)`;
 
-    // 情况 B：被认定为“无需续期”的满额状态
-    // 满足以下任一即可：页面报5天错、之前已满120、刷新后时间处于108-120的高位
-    const isMaxedOutStatus = errorMsg.includes('5 días') || 
-                             beforeHours >= 120 || 
-                             (afterHours === beforeHours && afterHours >= 108);
+    // 情况 A：续期成功 (时间确实增长了)
+    if (afterHours > beforeHours) {
+        statusIcon = '🎉';
+        statusTitle = '续期成功';
+        tip = `时长已从 ${beforeHours}h 成功增加至 ${afterHours}h`;
+    } 
+    // 情况 B：判定为满额或接近满额 (无需续期)
+    // 逻辑：页面报错5天上限、或者原本就>=120、或者刷新后时间在108-120之间且未变动
+    else if (
+        errorMsg.includes('5 días') || 
+        beforeHours >= 120 || 
+        (afterHours === beforeHours && afterHours >= 108)
+    ) {
+        statusIcon = '✅';
+        statusTitle = '暂无需续期';
+        tip = afterHours >= 108 
+            ? `当前时长 ${afterHours}h 已接近或达到上限。` 
+            : `服务器反馈：已达5天上限。`;
+    }
+    // 情况 C：真正的异常 (时间在低位且点击后没反应)
+    else {
+        // 保持初始化的“续期失败”状态，但记录更详细的对比
+        tip = `点击续期后数据未同步。之前: ${beforeHours}h | 之后: ${afterHours}h`;
+    }
 
-    if (isRenewSuccess) {
-        // 场景 A：续期成功
-        const message = `🎉 <b>GreatHost 续期成功</b>\n\n` +
-                        `🆔 <b>ID:</b> <code>${serverId}</code>\n` +
-                        `⏰ <b>增加时间:</b> ${beforeHours} ➔ ${afterHours}h\n` +
-                        `🚀 <b>服务器状态:</b> ${serverStarted ? '✅ 已触发启动' : '运行正常'}\n` + 
-                        `📅 <b>执行时间:</b> ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`; 
-        await sendTelegramMessage(message);
-        console.log(" ✅ 续期成功 ✅ ");
+    // 组装统一的 Telegram 消息模板
+    const message = `${statusIcon} <b>GreatHost ${statusTitle}</b>\n\n` +
+                    `🆔 <b>服务器ID:</b> <code>${serverId}</code>\n` +
+                    `⏰ <b>最新时长:</b> ${afterHours}h\n` +
+                    `🚀 <b>运行状态:</b> ${serverStarted ? '✅ 已触发启动' : '运行正常'}\n` +
+                    `📅 <b>检查时间:</b> ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n\n` +
+                    `💡 <b>判定说明:</b> ${tip}`;
 
-    } else if (isMaxedOutStatus) {
-        // 场景 B：判定为满额/接近满额
-        const message = `✅ <b>GreatHost 已达上限</b>\n\n` +
-                        `🆔 <b>ID:</b> <code>${serverId}</code>\n` +
-                        `⏰ <b>剩余时间:</b> ${afterHours}h\n` +
-                        `🚀 <b>服务器状态:</b> ${serverStarted ? '✅ 已触发启动' : '运行正常'}\n` +
-                        `📅 <b>检查时间:</b> ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +      
-                        `💡 <b>提示:</b> 累计时长较高，暂无需续期。`;
-        await sendTelegramMessage(message);
-        console.log(" ⚠️ 已达上限/无需续期 ⚠️ ");
+    // 发送消息
+    await sendTelegramMessage(message);
+    
+    // 控制台记录详细数据便于排查
+    console.log(`--------------------------------------`);
+    console.log(`📊 最终判定: [${statusTitle}]`);
+    console.log(`📊 时间变化: ${beforeHours}h -> ${afterHours}h`);
+    console.log(`--------------------------------------`);
 
-    } else {
-        // 场景 C：真正的失败（时间没到108却没增加）
-        const message = `⚠️ <b>GreatHost 续期未生效</b>\n\n` +
-                        `🆔 <b>ID:</b> <code>${serverId}</code>\n` +
-                        `⏰ <b>剩余时间:</b> ${beforeHours}h\n` +
-                        `🚀 <b>服务器状态:</b> ${serverStarted ? '✅ 已触发启动' : '运行中'}\n` +
-                        `📅 <b>检查时间:</b> ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n` +
-                        `💡 <b>提示:</b> 时间未增加，请手动检查确认。`;            
-        await sendTelegramMessage(message);    
-        console.log(" 🚨 续期失败 🚨 ");
-    }  
-     } catch (err) {
-    console.error("❌ 运行时错误:", err.message);    
+  } catch (err) {
+    // 运行时错误处理
+    console.error("❌ 脚本运行崩溃:", err.message);
+    
+    // 如果不是因为代理熔断导致的报错，则发送详细的错误通知
     if (!err.message.includes("Proxy Check Failed")) {
-       await sendTelegramMessage(`🚨 <b>GreatHost 执行失败</b>\n<code>${err.message}</code>`);
+        const errorDetail = `🚨 <b>GreatHost 脚本报错</b>\n\n` +
+                            `❌ <b>错误信息:</b> <code>${err.message}</code>\n` +
+                            `📅 <b>时间:</b> ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
+        await sendTelegramMessage(errorDetail);
     }
   } finally {
-    if (browser) await browser.close();
+    // 无论成功失败，确保关闭浏览器释放资源
+    if (browser) {
+        console.log("🧹 [Exit] 正在关闭浏览器...");
+        await browser.close();
+    }
   }
 })();
