@@ -3,9 +3,8 @@ const PASSWORD = process.env.GREATHOST_PASSWORD || '';
 const CHAT_ID = process.env.CHAT_ID || '';
 const BOT_TOKEN = process.env.BOT_TOKEN || '';
 
-// === 新增：代理配置 (如果不需要代理，留空即可) ===
-// 建议通过 GitHub Secrets 传递：process.env.PROXY_URL
-const PROXY_URL = process.env.PROXY_URL || "socks5://admin123:admin321@138.68.253.225:30792";
+// === 代理配置 (如果不需要代理，留空) ===
+const PROXY_URL = process.env.PROXY_URL || "";
 
 const { chromium } = require("playwright");
 const https = require('https');
