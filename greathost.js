@@ -305,33 +305,38 @@ async function sendTelegramMessage(message) {
         tip = `点击续期后数据未同步。之前: ${beforeHours}h | 之后: ${afterHours}h`;
     }
 
-    // 发送消息
+// === 14. 发送正常消息 ===
     await sendTelegramMessage(getReport(statusIcon, statusTitle, afterHours, tip));   
 
-    } catch (err) {
+  } catch (err) {
     console.error("❌ 脚本运行崩溃:", err.message);
 
     if (!err.message.includes("Proxy Check Failed")) {
-
       if (typeof getReport === 'function') {
+        const currentHours = (typeof afterHours !== 'undefined' ? afterHours : (typeof beforeHours !== 'undefined' ? beforeHours : 0));
         await sendTelegramMessage(getReport(
           '🚨',
           '脚本运行报错',
-          (typeof afterHours !== 'undefined'
-            ? afterHours
-            : (typeof beforeHours !== 'undefined' ? beforeHours : 0)),
+          currentHours,
           `错误详情: <code>${err.message}</code>`
         ));
       } else {
-        await sendTelegramMessage(errorDetail);
+        const errorDetail = `🚨 <b>GreatHost 脚本崩溃</b>\n\n` +
+                            `❌ <b>错误:</b> <code>${err.message}</code>\n` +
+                            `📅 <b>时间:</b> ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
+        await sendTelegramMessage(errorDetail);        
       }
+    }    
 
-    } 
-
-  } finally { 
-    if (browser) {
-      console.log("🧹 [Exit] 正在关闭浏览器...");
-      await browser.close();
+  } finally {
+    // 只有当 browser 成功启动并拥有 close 方法时才调用
+    if (browser && typeof browser.close === 'function') {
+        try {
+            console.log("🧹 [Exit] 正在关闭浏览器...");
+            await browser.close();
+        } catch (closeErr) {
+            console.error("⚠️ 关闭浏览器时发生异常 (可能已提前关闭):", closeErr.message);
+        }
     }
   }
 })();
