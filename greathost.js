@@ -158,7 +158,17 @@ async function sendTelegramMessage(message) {
     
     // === 5. 提前提取 ID，防止页面跳转后丢失上下文 ===
     const serverId = page.url().split('/').pop() || 'unknown';
-    console.log(`🆔 解析到 Server ID: ${serverId}`);    
+    console.log(`🆔 解析到 Server ID: ${serverId}`); 
+
+    // 【新增点 1/2】：定义通用报告函数
+    const getReport = (icon, title, hours, detail) => {
+        return `${icon} <b>GreatHost ${title}</b>\n\n` +
+               `🆔 <b>服务器ID:</b> <code>${serverId}</code>\n` +
+               `⏰ <b>${title.includes('冷却') ? '累计时长' : '最新时长'}:</b> ${hours}h\n` +
+               `🚀 <b>运行状态:</b> ${serverStarted ? '✅ 已触发启动' : '运行正常'}\n` +
+               `📅 <b>检查时间:</b> ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n\n` +
+               `💡 <b>判定说明:</b> ${detail}`;
+    };
 
     // === 6. 等待异步数据加载 (直到 accumulated-time 有数字) ===    
     const timeSelector = '#accumulated-time';
@@ -179,21 +189,11 @@ async function sendTelegramMessage(message) {
     console.log(`🆔 ID: ${serverId} | ⏰ 目前: ${beforeHours}h | 🔘 状态: ${btnContent.includes('Wait') ? '冷却中' : '可续期'}`);
        
     if (btnContent.includes('Wait')) {
-          // 9.1. 提取数字：从 "Wait 23 min" 中提取出 "23"
-    const waitTime = btnContent.match(/\d+/)?.[0] || "??"; 
-    
-          // 9.2. 组装消息：通知用户还在冷却，并显示当前已累计的时间
-    const message = `⏳ <b>GreatHost 还在冷却中</b>\n\n` +
-                    `🆔 <b>服务器ID:</b> <code>${serverId}</code>\n` +
-                    `⏰ <b>冷却时间:</b> ${waitTime} 分钟\n` +
-                    `📊 <b>当前累计:</b> ${beforeHours}h\n` +
-                    `🚀 <b>服务器状态:</b> ${serverStarted ? '✅ 已触发启动' : '运行中'}\n` +
-                    `📅 <b>检查时间:</b> ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
-    
-    await sendTelegramMessage(message); // 发送TG通知
-    await browser.close();
-    return; // 结束脚本，不执行后面的点击操作
-}
+        // 9.1. 提取数字：从 "Wait 23 min" 中提取出 "23"
+        const waitTime = btnContent.match(/\d+/)?.[0] || "??";          
+        await sendTelegramMessage(getReport('⏳', '还在冷却中', beforeHours, `处于冷却中，剩 ${waitTime} 分钟`));
+        return; 
+    }
     
 // === 10. 执行续期 (模拟真实用户行为版) ===
     console.log("⚡ 启动模拟真人续期流程...");
@@ -312,16 +312,8 @@ async function sendTelegramMessage(message) {
         tip = `点击续期后数据未同步。之前: ${beforeHours}h | 之后: ${afterHours}h`;
     }
 
-    // 组装统一的 Telegram 消息模板
-    const message = `${statusIcon} <b>GreatHost ${statusTitle}</b>\n\n` +
-                    `🆔 <b>服务器ID:</b> <code>${serverId}</code>\n` +
-                    `⏰ <b>最新时长:</b> ${afterHours}h\n` +
-                    `🚀 <b>运行状态:</b> ${serverStarted ? '✅ 已触发启动' : '运行正常'}\n` +
-                    `📅 <b>检查时间:</b> ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}\n\n` +
-                    `💡 <b>判定说明:</b> ${tip}`;
-
     // 发送消息
-    await sendTelegramMessage(message);
+    await sendTelegramMessage(getReport(statusIcon, statusTitle, afterHours, tip));
     
     // 控制台记录详细数据便于排查
     console.log(`--------------------------------------`);
@@ -330,17 +322,25 @@ async function sendTelegramMessage(message) {
     console.log(`--------------------------------------`);
 
   } catch (err) {
-    // 运行时错误处理
     console.error("❌ 脚本运行崩溃:", err.message);
     
-    // 如果不是因为代理熔断导致的报错，则发送详细的错误通知
     if (!err.message.includes("Proxy Check Failed")) {
-        const errorDetail = `🚨 <b>GreatHost 脚本报错</b>\n\n` +
-                            `❌ <b>错误信息:</b> <code>${err.message}</code>\n` +
-                            `📅 <b>时间:</b> ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
-        await sendTelegramMessage(errorDetail);
-    }
-  } finally {
+        // 如果崩溃时已经定义了 getReport (即已经过了第 5 步)
+        if (typeof getReport === 'function') {
+            await sendTelegramMessage(getReport(
+    '🚨', 
+    '脚本运行报错', 
+    (typeof afterHours !== 'undefined' ? afterHours : (typeof beforeHours !== 'undefined' ? beforeHours : 0)), 
+    `错误详情: <code>${err.message}</code>`
+));
+        } else {
+            // 如果在定义 getReport 之前就崩溃了（如登录失败），使用简易报错
+            const errorDetail = `🚨 <b>GreatHost 脚本崩溃</b>\n\n` +
+                                `❌ <b>错误:</b> <code>${err.message}</code>\n` +
+                                `📅 <b>时间:</b> ${new Date().toLocaleString('zh-CN', { timeZone: 'Asia/Shanghai' })}`;
+            await sendTelegramMessage(errorDetail);
+        }
+    } finally {
     // 无论成功失败，确保关闭浏览器释放资源
     if (browser) {
         console.log("🧹 [Exit] 正在关闭浏览器...");
