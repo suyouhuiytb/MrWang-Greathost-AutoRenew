@@ -313,13 +313,7 @@ async function sendTelegramMessage(message) {
     }
 
     // 发送消息
-    await sendTelegramMessage(getReport(statusIcon, statusTitle, afterHours, tip));
-    
-    // 控制台记录详细数据便于排查
-    console.log(`--------------------------------------`);
-    console.log(`📊 最终判定: [${statusTitle}]`);
-    console.log(`📊 时间变化: ${beforeHours}h -> ${afterHours}h`);
-    console.log(`--------------------------------------`);
+    await sendTelegramMessage(getReport(statusIcon, statusTitle, afterHours, tip));   
 
   } catch (err) {
     console.error("❌ 脚本运行崩溃:", err.message);
