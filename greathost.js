@@ -37,33 +37,57 @@ async function sendTelegramMessage(message) {
     const HOME_URL = `${GREATHOST_URL}/dashboard`;
     const BILLING_URL = `${GREATHOST_URL}/billing/free-servers`;
     
-    let proxyStatusTag = PROXY_URL ? `🔒 代理模式 (通过环境注入)` : "🌐 直连模式";
+    let proxyStatusTag = "🌐 直连模式";
     let serverStarted = false;
+
+    // 1. 解析代理数据 (修复 proxyData is not defined)
+    let proxyData = null;
+    if (PROXY_URL) {
+        try {
+            const cleanUrl = PROXY_URL.replace(/^socks5:\/\/|^http:\/\/|^https:\/\//, '');
+            proxyData = new URL(`socks5://${cleanUrl}`);
+            proxyStatusTag = `🔒 代理模式 (${proxyData.host})`;
+        } catch (e) {
+            console.error("❌ PROXY_URL 格式解析错误:", e.message);
+        }
+    }
 
     let browser;
     try {
         console.log(`🚀 任务启动 | 引擎: Firefox | ${proxyStatusTag}`);
         
-        // 1. 启动浏览器 - 这里完全不传 proxy 参数，防止 Playwright 报错
-        // 代理将由 YAML 中的 ALL_PROXY 环境变量在系统层处理
-        browser = await firefox.launch({ headless: true });
+        // 2. 启动浏览器 - 只传服务器地址，不传账号密码，避开报错
+        const launchOptions = { headless: true };
+        if (proxyData) {
+            launchOptions.proxy = { server: `socks5://${proxyData.host}` };
+        }
+        browser = await firefox.launch(launchOptions);
 
-        // 2. 创建上下文 - 确保这里只有这一处声明
+        // 3. 创建上下文 - 仅此一处定义
         const context = await browser.newContext({
             userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0',
             viewport: { width: 1280, height: 720 },
             locale: 'es-ES'
         });
 
-        // 3. 创建页面
         const page = await context.newPage();
 
-        // --- 抹除特征 ---
-        await page.addInitScript(() => {
-            Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
-        });
+        // 4. 关键：手动注入 SOCKS5 认证凭据 (Playwright 正确语法)
+        if (proxyData && proxyData.username) {
+            await page.route('**/*', async (route) => {
+                const response = await route.fetch();
+                // 如果遇到 407 代理认证错误，Playwright 会自动处理，但我们先通过 route 确保连接
+                await route.continue();
+            });
+            // 这是 Playwright 处理认证的标准 API
+            await context.setHttpCredentials({
+                username: proxyData.username,
+                password: proxyData.password
+            });
+            console.log("🔑 代理凭据已通过 context.setHttpCredentials 注入");
+        }
 
-        // 4. Firefox 专属伪装（移除所有 Chrome 特征，确保持一致性）
+          // 4. Firefox 专属伪装（移除所有 Chrome 特征，确保持一致性）
         await page.addInitScript(() => {
             Object.defineProperty(navigator, 'webdriver', { get: () => undefined });
             Object.defineProperty(navigator, 'languages', { get: () => ['es-ES', 'es', 'en'] });
