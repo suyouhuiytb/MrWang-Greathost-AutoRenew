@@ -42,9 +42,10 @@ jobs:
         run: python greathost.py
 
       # 5. 上传调试截图 (如果脚本里有 save_screenshot 的话)
-      - name: Upload debug artifacts
-        if: failure()
+      - name: Upload Error Page
+        if: failure() # 仅在脚本报错失败时执行
         uses: actions/upload-artifact@v4
         with:
-          name: greathost-python-debug
-          path: ./*.png
+          name: error-screenshot
+          path: error_page.html
+          retention-days: 3 # 保存3天
