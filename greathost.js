@@ -27,46 +27,34 @@ async function sendTelegramMessage(message) {
     const GREATHOST_URL = "https://greathost.es";
     let proxyStatusTag = "🌐 直连模式";
 
-    const launchOptions = { 
-        headless: true, 
-        args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            // 关键：强制浏览器忽略代理认证（有时能绕过内核限制）
-            '--ignore-certificate-errors'
-        ] 
-    };
-
+    // --- 修改开始：改用 Firefox 引擎 ---
     let proxyData = null;
     if (PROXY_URL) {
         try {
-            // 无论你输入什么，我们在这里强制转换
-            const rawUrl = PROXY_URL.replace('socks5://', 'http://'); 
+            const rawUrl = PROXY_URL.startsWith('socks') ? PROXY_URL : `socks5://${PROXY_URL}`;
             proxyData = new URL(rawUrl);
-            
-            // 重点：尝试以 http 协议格式提供给 launch
-            // 很多时候 Playwright 会自动处理 socks 握手，但声明为 http 能骗过认证检查
-            launchOptions.proxy = { 
-                server: proxyData.href 
-            };
             proxyStatusTag = `🔒 代理模式 (${proxyData.host})`;
         } catch (e) {
             console.error("❌ PROXY_URL 解析失败:", e.message);
         }
     }
 
-    // 1. 启动浏览器
-    const browser = await chromium.launch(launchOptions);
+    // 启动 Firefox (Firefox 对 SOCKS5 认证支持极好)
+    const browser = await firefox.launch({ headless: true });
 
-    // 2. 创建上下文（完全不再传任何 proxy 对象，让它只继承 launch 的 server）
     const context = await browser.newContext({
-        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:120.0) Gecko/20100101 Firefox/120.0',
         viewport: { width: 1280, height: 720 },
-        locale: 'es-ES'
+        // 在 Firefox 中，这样写是 100% 支持的
+        proxy: proxyData ? {
+            server: `socks5://${proxyData.host}`,
+            username: proxyData.username,
+            password: proxyData.password
+        } : undefined
     });
 
     const page = await context.newPage();
-
+    
     // 3. 【核心黑科技】通过 page.authenticate 手动注入凭据
     // 这比在 context 里写死的兼容性更强
     if (proxyData && proxyData.username) {
@@ -75,8 +63,7 @@ async function sendTelegramMessage(message) {
             password: proxyData.password
         });
         console.log("🔑 代理凭据已通过 page.authenticate 注入");
-    }
-    
+    }    
       
   try {
     console.log(`🚀 任务启动 | ${proxyStatusTag}`);
