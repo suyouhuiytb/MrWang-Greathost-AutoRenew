@@ -52,26 +52,34 @@ async function sendTelegramMessage(message) {
         }
     }
 
+    // ... 前面解析 proxyData 的代码保持不变 ...
+
     let browser;
     try {
         console.log(`🚀 任务启动 | 引擎: Firefox | ${proxyStatusTag}`);
         
-        // 2. 启动 Firefox
-        browser = await firefox.launch({ headless: true });
-
-        // 3. 创建上下文
-        const context = await browser.newContext({
-            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0',
-            viewport: { width: 1280, height: 720 },
-            locale: 'es-ES',
-            proxy: proxyData ? {
+        // 1. 核心修改：在 launch 阶段直接把 server, username, password 传进去
+        const launchOptions = { headless: true };
+        if (proxyData) {
+            launchOptions.proxy = {
                 server: `socks5://${proxyData.host}`,
                 username: proxyData.username,
                 password: proxyData.password
-            } : undefined
+            };
+        }
+        
+        browser = await firefox.launch(launchOptions);
+
+        // 2. 核心修改：newContext 里面【绝对不要】再写 proxy 属性
+        const context = await browser.newContext({
+            userAgent: 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:124.0) Gecko/20100101 Firefox/124.0',
+            viewport: { width: 1280, height: 720 },
+            locale: 'es-ES'
         });
 
         const page = await context.newPage();
+        
+        // ... 后面的逻辑保持不变 ...
 
         // 4. Firefox 专属伪装（移除所有 Chrome 特征，确保持一致性）
         await page.addInitScript(() => {
