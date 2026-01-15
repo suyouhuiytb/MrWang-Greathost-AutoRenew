@@ -37,8 +37,7 @@ jobs:
           GREATHOST_EMAIL: ${{ secrets.GREATHOST_EMAIL }}
           GREATHOST_PASSWORD: ${{ secrets.GREATHOST_PASSWORD }}
           TELEGRAM_BOT_TOKEN: ${{ secrets.BOT_TOKEN }}
-          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}      
-          # 这里代理依然可以走 Secret，脚本里如果有硬编码会优先用硬编码
+          TELEGRAM_CHAT_ID: ${{ secrets.CHAT_ID }}    
           PROXY_URL: ${{ secrets.PROXY_URL }}
         run: python greathost.py
 
