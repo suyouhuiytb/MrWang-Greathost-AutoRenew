@@ -213,6 +213,7 @@ def safe_click(driver, element):
             print("❌ JS 点击也失败:", ex)
             raise
     
+
 def run_task():
     # 随机延迟启动
     wait_time = random.randint(1, 100)
@@ -256,7 +257,7 @@ def run_task():
         time.sleep(0.4)
         safe_send_keys(password_input, PASSWORD)
 
-        # 3. 短暂等待后点击登录（保留原意的短暂停顿）
+        # 3. 短暂等待后点击登录
         time.sleep(random.uniform(0.8, 1.6))
         submit_btn = wait.until(EC.element_to_be_clickable((By.CSS_SELECTOR, "button[type='submit']")))
         safe_click(driver, submit_btn)        
@@ -264,230 +265,245 @@ def run_task():
         wait.until(EC.url_contains("/dashboard"))
         print("✅ 登录成功！")
 
-         # 登录成功后，不要立刻去点 Billing
+        # 登录成功后随机假动作
         print("🎲 执行随机假动作...")
         if random.random() > 0.5:
-            driver.get("https://greathost.es/services") # 先去服务列表晃一圈
+            driver.get("https://greathost.es/services")
             time.sleep(random.randint(4, 8))
-            # 2. 回到 Dashboard (或者直接跳回 Dashboard)
             print("🏠 正在返回仪表盘...")
             driver.get("https://greathost.es/dashboard") 
             wait.until(EC.url_contains("/dashboard"))
             time.sleep(random.uniform(1, 4))
 
-# === 2. 状态检查与自动开机 (针对新版小圆点 UI 优化) ===
-print("📊 正在检查服务器实时状态...")
-try:
-        status_indicator = wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'server-status-indicator')))
-        status_text = status_indicator.get_attribute('title') or 'unknown'
+        # === 2. 状态检查与自动开机 (放回 run_task 内部) ===
+        print("📊 正在检查服务器实时状态...")
+        try:
+            status_indicator = wait.until(
+                EC.presence_of_element_located((By.CLASS_NAME, 'server-status-indicator'))
+            )
+            status_text = status_indicator.get_attribute('title') or 'unknown'
 
-        if any(x in status_text.lower() for x in ['stopped', 'offline']):
+            if any(x in status_text.lower() for x in ['stopped', 'offline']):
                 print("⚡ 检测到服务器离线，准备执行启动...")
 
                 perform_step(
-                        driver,
-                        wait,
-                        "启动按钮",
-                        (By.CSS_SELECTOR, 'button.btn-start, .action-start'),
-                        "button.btn-start, .action-start"
+                    driver,
+                    wait,
+                    "启动按钮",
+                    (By.CSS_SELECTOR, 'button.btn-start, .action-start'),
+                    "button.btn-start, .action-start"
                 )
                 server_started = True
 
-except Exception as e:
-        print(f"⚠️ 状态检查失败: {e}")
+        except Exception as e:
+            print(f"⚠️ 状态检查失败: {e}")
 
-
-      # === 3. 点击 Billing 图标（统一封装步骤）===
+        # === 3. 点击 Billing 图标 ===
         perform_step(
-                driver,
-                wait,
-                "Billing 图标",
-                (By.CLASS_NAME, 'btn-billing-compact'),
-                ".btn-billing-compact"
-         )   
-                
+            driver,
+            wait,
+            "Billing 图标",
+            (By.CLASS_NAME, 'btn-billing-compact'),
+            ".btn-billing-compact"
+        )
+
         # === 4. 点击 View Details（统一封装步骤）===
         perform_step(
-                driver,
-                wait,
-                "View Details",
-                (By.LINK_TEXT, 'View Details'),
-                "a[href*='details']"
-         )   
+            driver,
+            wait,
+            "View Details",
+            (By.LINK_TEXT, 'View Details'),
+            "a[href*='details']"
+        )
 
-        # === 5. 提前提取 ID (JS 1:1) ===
+        # === 5. 提前提取 ID ===
         server_id = driver.current_url.split('/')[-1] or 'unknown'
         print(f"🆔 解析到 Server ID: {server_id}")
 
-        # === 6. 等待异步数据加载 (JS 1:1) ===
+        # === 6. 等待异步数据加载 ===
         time_selector = "#accumulated-time"
         try:
-            wait.until(lambda d: re.search(r'\d+', d.find_element(By.CSS_SELECTOR, time_selector).text) and d.find_element(By.CSS_SELECTOR, time_selector).text.strip() != '0 hours')
+            wait.until(lambda d: re.search(r'\d+', d.find_element(By.CSS_SELECTOR, time_selector).text)
+                       and d.find_element(By.CSS_SELECTOR, time_selector).text.strip() != '0 hours')
         except:
             print("⚠️ 初始时间加载超时或为0")
 
-        # === 7. 获取当前状态 (JS 1:1) ===
+        # === 7. 获取当前累计时间 ===
         before_hours_text = driver.find_element(By.CSS_SELECTOR, time_selector).text
         before_hours = get_hours(before_hours_text)
 
-        # === 8. 定位按钮状态 (JS 1:1) ===
+        # === 8. 定位续期按钮状态 ===
         renew_btn = wait.until(EC.presence_of_element_located((By.ID, "renew-free-server-btn")))
         btn_content = renew_btn.get_attribute('innerHTML')
 
-        # === 9. 逻辑判定 (JS 1:1) ===
+        # === 9. 冷却判定 ===
         print(f"🆔 ID: {server_id} | ⏰ 目前: {before_hours}h | 🔘 状态: {'冷却中' if 'Wait' in btn_content else '可续期'}")
 
         if 'Wait' in btn_content:
             m = re.search(r'\d+', btn_content)
             wait_time = m.group(0) if m else "??"
-            
-            message = (f"⏳ <b>GreatHost 还在冷却中</b>\n\n"                       
-                       f"🆔 <b>服务器ID:</b> <code>{server_id}</code>\n"
-                       f"⏰ <b>冷却时间:</b> {wait_time} 分钟\n"
-                       f"📊 <b>当前累计:</b> {before_hours}h\n"
-                       f"🚀 <b>服务器状态:</b> {status_display}\n"
-                       f"📅 <b>检查时间:</b> {get_now_shanghai()}")
+
+            message = (
+                f"⏳ <b>GreatHost 还在冷却中</b>\n\n"
+                f"🆔 <b>服务器ID:</b> <code>{server_id}</code>\n"
+                f"⏰ <b>冷却时间:</b> {wait_time} 分钟\n"
+                f"📊 <b>当前累计:</b> {before_hours}h\n"
+                f"🚀 <b>服务器状态:</b> {status_display}\n"
+                f"📅 <b>检查时间:</b> {get_now_shanghai()}"
+            )
             print("ℹ️ 发送冷却通知:", message)
             send_telegram(message)
+
             try:
                 if driver:
                     driver.quit()
-            except: pass        
+            except:
+                pass
             return
 
-       # === 10. 执行续期（统一封装步骤）===
+        # === 10. 执行续期 ===
         perform_step(
-                driver,
-                wait,
-                "续期按钮",
-                (By.ID, 'renew-free-server-btn')                
-         )   
+            driver,
+            wait,
+            "续期按钮",
+            (By.ID, 'renew-free-server-btn')
+        )
 
         # 深度等待，确保后端写入
         print("⏳ 正在进入 20 秒深度等待，确保后端写入数据...")
         time.sleep(20)
 
+        # === 11. 检查页面错误提示 ===
         error_msg = ""
         try:
             error_msg = driver.find_element(By.CSS_SELECTOR, '.toast-error, .alert-danger, .toast-message').text
-            if error_msg: print(f"🔔 页面反馈信息: {error_msg}")
-        except: pass
+            if error_msg:
+                print(f"🔔 页面反馈信息: {error_msg}")
+        except:
+            pass
 
+        # === 12. 刷新页面同步数据 ===
         print("🔄 正在刷新页面同步远程数据...")
         try:
             driver.refresh()
         except:
             print("⚠️ 页面刷新超时，尝试直接读取数据...")
-        
+
         time.sleep(3)
 
-        # === 12. 获取续期后时间 (JS 1:1) ===
+        # === 13. 获取续期后时间 ===
         try:
             wait.until(lambda d: re.search(r'\d+', d.find_element(By.CSS_SELECTOR, time_selector).text))
-        except: pass
+        except:
+            pass
+
         after_hours_text = driver.find_element(By.CSS_SELECTOR, time_selector).text
         after_hours = get_hours(after_hours_text)
-        
+
         print(f"📊 判定数据: 之前 {before_hours}h -> 之后 {after_hours}h")
 
-
-        # === 13.  [新增] 仅在触发启动后，折返确认最终状态 ===
-        final_status_text = "运行正常" # 默认文案
+        # === 14. 若触发启动，折返确认最终状态 ===
+        final_status_text = "运行正常"
         if server_started:
             print("🔄 检测到曾触发启动动作，正在折返 Dashboard 确认最终状态...")
             try:
                 driver.get("https://greathost.es/dashboard")
                 wait.until(EC.presence_of_element_located((By.CLASS_NAME, 'server-status-indicator')))
-                time.sleep(2) # 稍作等待
-                
-                # 重新抓取圆点的 title
+                time.sleep(2)
+
                 final_indicator = driver.find_element(By.CLASS_NAME, 'server-status-indicator')
                 final_status_text = final_indicator.get_attribute('title') or "Unknown"
                 print(f"📡 最终状态确认: [{final_status_text}]")
-                
-                # 抓取完后，为了不影响后续逻辑，跳回续期页面或保持在此
-                # 既然已经判定完 after_hours，留在 Dashboard 也是安全的
+
             except Exception as e:
                 print(f"⚠️ 最终状态同步失败: {e}")
                 final_status_text = "确认失败"
 
-        # === 14. 智能逻辑判定 (JS 1:1) ===
-        is_renew_success = after_hours > before_hours
-        is_maxed_out = ("5 días" in error_msg) or (before_hours >= 120) or (after_hours == before_hours and after_hours >= 108)
-
-        # 🚀 统一构造服务器状态显示文案 (使用全局 STATUS_MAP)
-        if server_started and 'final_status_text' in locals():
+        # === 15. 构造最终状态文案 ===
+        if server_started:
             icon, name = STATUS_MAP.get(final_status_text, ["❓", final_status_text])
             status_display = f"✅ 已触发启动 ({icon} {name})"
         else:
-            # 未启动过则显示初始状态或默认正常
             icon, name = STATUS_MAP.get(status_text, ["🟢", "运行正常"])
             status_display = f"{icon} {name}"
 
-        # === 15. 分发最终通知 ===
+        # === 16. 分发最终通知 ===
+        is_renew_success = after_hours > before_hours
+        is_maxed_out = (
+            ("5 días" in error_msg)
+            or (before_hours >= 120)
+            or (after_hours == before_hours and after_hours >= 108)
+        )
+
         if is_renew_success:
-            message = (f"🎉 <b>GreatHost 续期成功</b>\n\n"
-                       f"🆔 <b>ID:</b> <code>{server_id}</code>\n"
-                       f"⏰ <b>增加时间:</b> {before_hours} ➔ {after_hours}h\n"
-                       f"🚀 <b>服务器状态:</b> {status_display}\n"
-                       f"📅 <b>执行时间:</b> {get_now_shanghai()}")
+            message = (
+                f"🎉 <b>GreatHost 续期成功</b>\n\n"
+                f"🆔 <b>ID:</b> <code>{server_id}</code>\n"
+                f"⏰ <b>增加时间:</b> {before_hours} ➔ {after_hours}h\n"
+                f"🚀 <b>服务器状态:</b> {status_display}\n"
+                f"📅 <b>执行时间:</b> {get_now_shanghai()}"
+            )
             send_telegram(message)
             print(" ✅ 续期成功 ✅ ")
 
         elif is_maxed_out:
-            message = (f"✅ <b>GreatHost 已达上限</b>\n\n"
-                       f"🆔 <b>ID:</b> <code>{server_id}</code>\n"
-                       f"⏰ <b>剩余时间:</b> {after_hours}h\n"
-                       f"🚀 <b>服务器状态:</b> {status_display}\n"
-                       f"📅 <b>检查时间:</b> {get_now_shanghai()}\n"
-                       f"💡 <b>提示:</b> 累计时长较高，暂无需续期。")
+            message = (
+                f"⚠️ <b>GreatHost 已达上限</b>\n\n"
+                f"🆔 <b>ID:</b> <code>{server_id}</code>\n"
+                f"⏰ <b>剩余时间:</b> {after_hours}h\n"
+                f"🚀 <b>服务器状态:</b> {status_display}\n"
+                f"📅 <b>检查时间:</b> {get_now_shanghai()}\n"
+                f"💡 <b>提示:</b> 累计时长较高，暂无需续期。"
+            )
             send_telegram(message)
             print(" ⚠️ 已达上限/无需续期 ⚠️ ")
 
         else:
-            message = (f"⚠️ <b>GreatHost 续期未生效</b>\n\n"
-                       f"🆔 <b>ID:</b> <code>{server_id}</code>\n"
-                       f"⏰ <b>剩余时间:</b> {before_hours}h\n"
-                       f"🚀 <b>服务器状态:</b> {status_display}\n"
-                       f"📅 <b>检查时间:</b> {get_now_shanghai()}\n"
-                       f"💡 <b>提示:</b> 时间未增加，请手动检查确认。")
+            message = (
+                f"⚠️ <b>GreatHost 续期未生效</b>\n\n"
+                f"🆔 <b>ID:</b> <code>{server_id}</code>\n"
+                f"⏰ <b>剩余时间:</b> {before_hours}h\n"
+                f"🚀 <b>服务器状态:</b> {status_display}\n"
+                f"📅 <b>检查时间:</b> {get_now_shanghai()}\n"
+                f"💡 <b>提示:</b> 时间未增加，请手动检查确认。"
+            )
             send_telegram(message)
             print(" 🚨 续期失败 🚨 ")
 
     except Exception as err:
         err_str = str(err).replace('<', '[').replace('>', ']')
         print(f"❌ 运行时捕获到异常: {err_str}")
-        
-        # 存证
+
         if driver:
             try:
                 driver.save_screenshot("error.png")
                 with open("error_page.html", "w", encoding="utf-8") as f:
                     f.write(driver.page_source)
-            except: pass
+            except:
+                pass
 
-        # 智能判定：只在非代理错误时发送“业务报错”
-        # 因为代理错误在 check_proxy_ip 里已经发过 TG 并 raise 了
         if "BLOCK_ERR" not in err_str and "代理预检" not in err_str:
             now = get_now_shanghai()
             current_url = driver.current_url if driver else "未知"
-            error_message = (f"🚨 <b>GreatHost 脚本业务报错</b>\n\n"
-                             f"🆔 <b>ID:</b> <code>{server_id}</code>\n"
-                             f"❌ <b>详情:</b> <code>{err_str}</code>\n"
-                             f"📍 <b>位置:</b> {current_url}\n"
-                             f"📅 <b>时间:</b> {now}")
+            error_message = (
+                f"🚨 <b>GreatHost 脚本业务报错</b>\n\n"
+                f"🆔 <b>ID:</b> <code>{server_id}</code>\n"
+                f"❌ <b>详情:</b> <code>{err_str}</code>\n"
+                f"📍 <b>位置:</b> {current_url}\n"
+                f"📅 <b>时间:</b> {now}"
+            )
             send_telegram(error_message)
             print("📢 业务报错已发送通知")
         else:
             print("⏭️ 代理链路拦截，跳过业务二次通知。")
 
     finally:
-        # 4. 彻底清理浏览器进程
         if driver:
             try:
                 driver.quit()
                 print("🧹 浏览器进程已安全关闭")
-            except: pass
+            except:
+                pass
 
 if __name__ == "__main__":
     run_task()
