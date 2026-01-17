@@ -261,11 +261,9 @@ def run_task():
             driver.execute_script("arguments[0].scrollIntoView({block: 'center'});", billing_btn)
             time.sleep(random.uniform(1, 2))
             
-            # ⭐ 核心防封动作：随机偏移点击
             # 产生一个 -5 到 +5 像素的随机偏移量
             offset_x = random.randint(-5, 5)
-            offset_y = random.randint(-5, 5)
-            
+                        
             from selenium.webdriver.common.action_chains import ActionChains
             actions = ActionChains(driver)
             actions.move_to_element_with_offset(billing_btn, offset_x, offset_y).click().perform()
@@ -466,38 +464,31 @@ def run_task():
             print(" 🚨 续期失败 🚨 ")
 
     except Exception as err:
-        # 1. 打印原始错误日志到控制台
-        print(f"❌ 运行时捕获到异常: {err}")
+        err_str = str(err).replace('<', '[').replace('>', ']')
+        print(f"❌ 运行时捕获到异常: {err_str}")
         
-        # 2. 尝试保存当前页面源码（用于 GitHub Actions 离线分析）
-        try:
-            if driver:
+        # 存证
+        if driver:
+            try:
+                driver.save_screenshot("error.png")
                 with open("error_page.html", "w", encoding="utf-8") as f:
                     f.write(driver.page_source)
-                print("💾 已保存错误页面源码至 error_page.html")
-        except: pass
+            except: pass
 
-        # 3. 智能逻辑判定：是否需要发送业务报警通知
-        # 将错误转为字符串并清洗 HTML 特殊字符，防止 TG 发送失败
-        err_str = str(err).replace('<', '[').replace('>', ']')
-        
-        # 核心逻辑：如果报错原因不包含“代理”或“Proxy Check Failed”，
-        # 说明 check_proxy_ip 已经通过，现在的报错来自于登录、点击或判定环节。
-        if "Proxy Check Failed" not in err_str and "代理" not in err_str:
+        # 智能判定：只在非代理错误时发送“业务报错”
+        # 因为代理错误在 check_proxy_ip 里已经发过 TG 并 raise 了
+        if "BLOCK_ERR" not in err_str and "代理预检" not in err_str:
             now = get_now_shanghai()
             current_url = driver.current_url if driver else "未知"
-            
             error_message = (f"🚨 <b>GreatHost 脚本业务报错</b>\n\n"
-                             f"🆔 <b>服务器ID:</b> <code>{server_id}</code>\n"
-                             f"❌ <b>错误详情:</b> <code>{err_str}</code>\n"
-                             f"📍 <b>报错位置:</b> {current_url}\n"
-                             f"📅 <b>发生时间:</b> {now}\n\n"
-                             f"💡 <b>提示:</b> 代理连接正常，此报错可能来自登录过期或页面 UI 变动。")
-            
+                             f"🆔 <b>ID:</b> <code>{server_id}</code>\n"
+                             f"❌ <b>详情:</b> <code>{err_str}</code>\n"
+                             f"📍 <b>位置:</b> {current_url}\n"
+                             f"📅 <b>时间:</b> {now}")
             send_telegram(error_message)
-            print("📢 已发送业务报错 TG 通知")
+            print("📢 业务报错已发送通知")
         else:
-            print("⏭️ 检测到为代理环节报错，已由 check_proxy_ip 处理，此处跳过二次通知。")
+            print("⏭️ 代理链路拦截，跳过业务二次通知。")
 
     finally:
         # 4. 彻底清理浏览器进程
