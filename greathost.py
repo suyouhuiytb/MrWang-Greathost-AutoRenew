@@ -207,11 +207,13 @@ def get_error_msg(driver):
     except: return ""
 
 def renew_click(driver, wait):
-    perform_step(driver, wait, "Renew button", (By.ID,'renew-free-server-btn'))    
-    end_time = time.time() + 3.0
-    while time.time() < end_time:
+    perform_step(driver, wait, "Renew button", (By.ID,'renew-free-server-btn'))
+    end = time.time() + 3
+    while time.time() < end:
         msg = get_error_msg(driver)
-        if msg: return msg  # 抓到立刻撤
+        if msg: 
+            print(f"DEBUG: 抓到报错 -> {msg}")
+            return msg
         time.sleep(random.uniform(0.3, 0.6))
     return ""
 
