@@ -257,18 +257,9 @@ def run_task():
             return # finally 会处理 driver.quit()
 
         err_msg = renew_click(driver, wait)
-        after, _ = get_hours(driver)
-        print("After hours:", after)
-        
-        if after == before:                
-            time.sleep(15)
-            try: 
-                driver.refresh()
-                after, _ = get_hours(driver)
-                print(f"After hours (retry): {after}")
-            except: pass
-
+        after, _ = get_hours(driver)      
         print(f"Final after hours used for 判定: {after}")
+        
         final_status, started_flag = confirm_and_start(driver, wait)
         if started_flag:
             icon, name = STATUS_MAP.get(final_status, ["❓", final_status])
