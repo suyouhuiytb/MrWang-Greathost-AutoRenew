@@ -15,7 +15,7 @@ PASSWORD = os.getenv("GREATHOST_PASSWORD", "")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
 PROXY_URL = os.getenv("PROXY_URL", "")
-  #需要续期服务器名称。只有一个服务器可留空
+# 需要续期服务器名称。只有一个服务器可留空
 TARGET_NAME_CONFIG = os.getenv("TARGET_NAME", "loveMC") 
 
 # 状态映射表
@@ -79,6 +79,7 @@ def send_notice(kind, fields):
 def run_task():
     driver = None
     server_id = "未知"
+    serverName = "未知名称"   # 预先初始化，避免 except 中未定义
     try:
         opts = Options()
         opts.add_argument("--headless=new"); opts.add_argument("--no-sandbox")
@@ -120,10 +121,11 @@ def run_task():
         contract_res = fetch_api(driver, f"/api/servers/{server_id}/contract")
         print("DEBUG /contract 返回：", json.dumps(contract_res, indent=2, ensure_ascii=False))
 
-        c_data = contract_res.get('contract', {})
-        r_info = c_data.get('renewalInfo', {})
+        # 先解析再打印 debug
+        c_data = contract_res.get('contract', {}) or {}
+        r_info = c_data.get('renewalInfo', {}) or {}
 
-        serverName = c_data.get("serverName", "未知名称")
+        serverName = c_data.get("serverName", serverName)
         before_h = calculate_hours(r_info.get('nextRenewalDate'))
         last_renew_str = r_info.get('lastRenewalDate')
 
@@ -132,19 +134,35 @@ def run_task():
         print("DEBUG lastRenewalDate =", last_renew_str)
         print("DEBUG before_h =", before_h)
 
-
         # --- 冷却判定逻辑 (保持 30 分钟冷却) ---
         if last_renew_str:
             clean_last = re.sub(r'\.\d+Z$', 'Z', str(last_renew_str))
-            last_time = datetime.fromisoformat(clean_last.replace('Z', '+00:00'))
+            try:
+                last_time = datetime.fromisoformat(clean_last.replace('Z', '+00:00'))
+            except Exception as e:
+                print("DEBUG 解析 last_renew_str 失败:", clean_last, "错误:", e)
+                last_time = None
+
             now_time = datetime.now(timezone.utc)
-            minutes_passed = (now_time - last_time).total_seconds() / 60
-            
-            if minutes_passed < 30:
+            minutes_passed = None
+            if last_time:
+                minutes_passed = (now_time - last_time).total_seconds() / 60
+
+            # 调试输出：显示原始值与计算结果
+            print("DEBUG 冷却检查原始 last_renew_str =", last_renew_str)
+            print("DEBUG clean_last =", clean_last)
+            print("DEBUG last_time (UTC) =", last_time)
+            print("DEBUG now_time (UTC) =", now_time)
+            print("DEBUG minutes_passed =", minutes_passed)
+
+            if minutes_passed is not None and minutes_passed < 30:
                 wait_min = int(30 - minutes_passed)
+                print("DEBUG 处于冷却期，剩余分钟 =", wait_min)
                 fields = [("📛","服务器名称", serverName),("🆔","ID",f"<code>{server_id}</code>"),("⏰","冷却倒计时",f"{wait_min} 分钟"),("📊","当前累计",f"{before_h}h"),("🚀","状态",status_display)]
                 send_notice("cooldown", fields)
                 return
+            else:
+                print("DEBUG 不在冷却期，minutes_passed =", minutes_passed)
 
         # 5. 执行续期 POST
         print(f"🚀 正在为 {TARGET_NAME_CONFIG} 发送续期请求...")
@@ -154,14 +172,20 @@ def run_task():
         after_h = 0
         for _ in range(5):  # 每次等 3 秒，总共最多 15 秒
                 time.sleep(3)
-                renew_c = fetch_api(driver, f"/api/servers/{server_id}/contract").get('contract', {})
+                renew_contract = fetch_api(driver, f"/api/servers/{server_id}/contract")
+                # 兼容 fetch_api 返回结构：可能直接是 contract 对象或 {contract: {...}}
+                renew_c = renew_contract.get('contract', {}) if isinstance(renew_contract, dict) else {}
+                # 如果 fetch_api 直接返回 contract dict（不常见），也尝试使用 renew_contract 本身
+                if not renew_c and isinstance(renew_contract, dict) and 'serverId' in renew_contract:
+                        renew_c = renew_contract
+
                 after_h = calculate_hours(renew_c.get('renewalInfo', {}).get('nextRenewalDate'))
 
                 print("DEBUG 循环检查 after_h =", after_h, " nextRenewalDate =", renew_c.get('renewalInfo', {}).get('nextRenewalDate'))
                 if after_h > before_h:
                         break
 
-        # 7. 智能判定判定部分 [按照 test2.js 逻辑]
+        # 7. 智能判定判定部分 
         is_success = after_h > before_h
         print("DEBUG 判定：before_h =", before_h, "after_h =", after_h, "is_success =", is_success)
         msg_str = str(renew_res.get('message', '')).lower()
@@ -204,6 +228,7 @@ def run_task():
     except Exception as e:
         err = str(e).replace('<','[').replace('>',']')
         print("Runtime error:", err)
+        # 使用已初始化的 serverName 以避免二次异常
         send_notice("business_error", [("📛","服务器名称", serverName),("🆔","ID",f"<code>{server_id}</code>"),("❌","详情",f"<code>{err}</code>")])
     finally:
         if driver: driver.quit()
