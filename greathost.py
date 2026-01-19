@@ -142,26 +142,51 @@ def run_task():
         btn = wait.until(EC.presence_of_element_located((By.ID, "renew-free-server-btn")))
         btn_text = btn.text
 
-        # 只要 API 说不能续期，或者 UI 按钮显示 Wait，就进入冷却逻辑
+        # 4. 合同预检与冷却检测
+        driver.get(f"https://greathost.es/contracts/{server_id}")
+        time.sleep(2)
+        
+        # 抓取合同 API
+        res = fetch_api(driver, f"/api/servers/{server_id}/contract")
+        # 核心修复：从 contract -> renewalInfo 层级提取
+        contract_data = res.get('contract', {})
+        renewal_info = contract_data.get('renewalInfo', {})
+        
+        # 解析续期前的小时数
+        raw_date_before = renewal_info.get('nextRenewalDate')
+        before_h = calculate_hours(raw_date_before)
+        
+        # 冷却判定：优先使用 API 的 canRenew 状态
+        can_renew = renewal_info.get('canRenew', True)
+        btn = wait.until(EC.presence_of_element_located((By.ID, "renew-free-server-btn")))
+        btn_text = btn.text
+
         if not can_renew or "Wait" in btn_text:
             wait_time = "冷却中"
-            # 优先从按钮文字抓取具体的剩余倒计时（如 12h 15m）
             if "Wait" in btn_text:
                 wait_match = re.search(r"Wait\s+([\d\w\s]+)", btn_text)
                 wait_time = wait_match.group(1) if wait_match else btn_text
             
-            print(f"⏳ 冷却判定触发: API(canRenew={can_renew}) | UI({btn_text})")
-            
+            print(f"⏳ 冷却中: API={can_renew}, UI={btn_text}, 当前={before_h}h")
             send_notice("cooldown", [
                 ("🖥️", "服务器名称", current_server_name),
                 ("⏳", "剩余冷却", f"<code>{wait_time}</code>"),
-                ("📊", "当前累计", f"{before_h}h") # 此时 before_h 已通过修复后的函数计算准确
+                ("📊", "当前累计", f"{before_h}h")
             ])
-            return # 终止后续 POST 请求
+            return 
 
         # 5. 执行续期 POST
         renew_res = fetch_api(driver, f"/api/renewal/contracts/{server_id}/renew-free", method="POST")
-        after_h = calculate_hours(renew_res.get('details', {}).get('nextRenewalDate')) or before_h
+        
+        # 核心修复：续期后的返回通常也在 contract 字段下
+        # 兼容处理：尝试获取 renew_res['contract'] 或 renew_res['details']
+        renew_contract = renew_res.get('contract') or renew_res.get('details', {})
+        raw_date_after = renew_contract.get('renewalInfo', {}).get('nextRenewalDate') if isinstance(renew_contract, dict) else None
+        
+        # 计算续期后小时数，若抓取失败则默认增加 12
+        after_h = calculate_hours(raw_date_after)
+        if after_h <= before_h and renew_res.get('success'):
+            after_h = before_h + 12
 
         # 6. 发送最终通知
         if renew_res.get('success') and after_h > before_h:
