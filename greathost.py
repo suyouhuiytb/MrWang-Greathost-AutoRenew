@@ -97,7 +97,7 @@ def run_task():
 
         # 2. 获取 ID [按照您的要求从 API 获取]
         res = fetch_api(driver, "/api/servers")
-        server_list = raw.get("servers") if isinstance(raw, dict) else raw
+        server_list = res.get("servers") if isinstance(res, dict) else res
         server_list = server_list or []
         target_server = next((s for s in server_list if s.get('name') == TARGET_NAME_CONFIG), None)
         if not target_server: raise Exception(f"未找到服务器: {TARGET_NAME_CONFIG}")
