@@ -125,44 +125,44 @@ def run_task():
 
         # 4. 合同数据抓取与 API 级冷却判定
         driver.get(f"https://greathost.es/contracts/{server_id}")
-        time.sleep(3) # 确保 API 数据加载
+        time.sleep(5) # 增加等待，确保底层 API 完全加载
         
-        # 核心修复：必须从 contract 节点进入
+        # 抓取合同 API
         res = fetch_api(driver, f"/api/servers/{server_id}/contract")
-        contract_data = res.get('contract', {}) # 获取 contract 对象
-        renewal_info = contract_data.get('renewalInfo', {}) # 获取 renewalInfo 对象
         
-        # 提取日期字符串（解决 0 的源头）
+        # --- 解决 0 的核心：精准路径提取 ---
+        # 你的截图显示数据在 res -> contract -> renewalInfo
+        contract_obj = res.get('contract', {})
+        renewal_info = contract_obj.get('renewalInfo', {})
         raw_date_before = renewal_info.get('nextRenewalDate')
-        before_h = calculate_hours(raw_date_before)
         
-        # 获取用户金币（可选，用于通知）
-        user_coins = contract_data.get('userCoins', 0)
+        # 解析当前剩余小时数
+        before_h = calculate_hours(raw_date_before)
+        print(f"📊 API 解析结果: 原始日期={raw_date_before}, 换算小时={before_h}h")
 
-        # --- 核心冷却逻辑：完全基于 API 数据判定 ---
-        # 根据你 18:18 的记录显示已达 66h，上限为 120h，每次续 12h
-        # 设定阈值：如果当前时间超过 108h (即 120 - 12)，说明 12 小时内已续期过
+        # --- 解决冷却的核心：熔断机制 ---
+        # 逻辑：GreatHost 上限 120h，每次加 12h。如果 > 108h 判定为冷却中。
         if before_h > 108:
-            print(f"⏳ 触发 API 冷却保护：当前 {before_h}h，无需重复续期。")
+            print(f"🛑 安全熔断：当前 {before_h}h 接近上限，不发送 POST 续期请求以防止封号。")
             send_notice("cooldown", [
                 ("🖥️", "服务器名称", current_server_name),
-                ("⏳", "状态", "<code>冷却中 (API判定)</code>"),
-                ("📊", "当前累计", f"{before_h}h"),
-                ("💰", "用户金币", f"{user_coins}")
+                ("⏳", "状态", "<code>冷却中 (API 判定)</code>"),
+                ("📊", "当前累计", f"{before_h}h")
             ])
-            return # 强制退出，不再执行下方的 POST 请求
+            return # 直接终止，绝对不碰 POST 接口
 
         # 5. 执行续期 POST
+        print("🚀 时间不足，正在发送续期请求...")
         renew_res = fetch_api(driver, f"/api/renewal/contracts/{server_id}/renew-free", method="POST")
         
-        # 续期后的解析也同样需要进入 contract 层级
-        renew_contract = renew_res.get('contract', {})
-        raw_date_after = renew_contract.get('renewalInfo', {}).get('nextRenewalDate')
+        # 续期后的解析同样通过 contract 层级
+        renew_data = renew_res.get('contract', {}).get('renewalInfo', {})
+        raw_date_after = renew_data.get('nextRenewalDate')
         after_h = calculate_hours(raw_date_after)
 
-        # 补丁：如果 API 没返回新时间但显示成功，手动 +12
+        # 补丁：如果显示成功但 API 没及时更新，手动 +12
         if (after_h == 0 or after_h <= before_h) and renew_res.get('success'):
-            after_h = before_h + 12
+            after_h = before_h + 12      
 
         # 6. 发送最终通知
         if renew_res.get('success') and after_h > before_h:
