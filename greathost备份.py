@@ -1,3 +1,5 @@
+#### 模拟物理抓取，只抓第一个服务器####
+
 import os, re, time, random, requests
 from datetime import datetime
 from urllib.parse import urlparse
