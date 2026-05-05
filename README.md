@@ -3,9 +3,10 @@
 🚨 **GreatHost 脚本报错**
 
 📛 服务器名称: loveMC
-❌ 故障: `Message: 
-`
+❌ 故障: `Message: unknown error: net::ERR_CONNECTION_CLOSED
+  (Session info: chrome=147.0.7727.137)
+Stacktrac`
 🌐 代理状态: 已尝试直连
-📅 时间: 2026/05/04 22:10:30
+📅 时间: 2026/05/05 11:21:43
 
-> 最近更新: 2026/05/04 22:10:30
+> 最近更新: 2026/05/05 11:21:43
