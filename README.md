@@ -4,9 +4,9 @@
 
 📛 服务器名称: loveMC
 ❌ 故障: `Message: unknown error: net::ERR_CONNECTION_CLOSED
-  (Session info: chrome=151.0.7922.71)
+  (Session info: chrome=151.0.7922.75)
 Stacktrace`
 🌐 代理状态: 已尝试直连
-📅 时间: 2026/08/04 22:22:36
+📅 时间: 2026/08/05 10:45:33
 
-> 最近更新: 2026/08/04 22:22:36
+> 最近更新: 2026/08/05 10:45:33
